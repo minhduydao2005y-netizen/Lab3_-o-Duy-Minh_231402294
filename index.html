@@ -1,0 +1,651 @@
+
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Giám sát bể nuôi thủy hải sản</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #061b32, #063b50, #087e83);
+            color: white;
+            min-height: 100vh;
+            padding: 25px;
+        }
+
+        .container {
+            max-width: 1250px;
+            margin: auto;
+        }
+
+        header {
+            text-align: center;
+            padding: 25px;
+            margin-bottom: 25px;
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 20px;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+        }
+
+        header h1 {
+            color: #64f5e2;
+            font-size: 30px;
+            margin-bottom: 10px;
+        }
+
+        header p {
+            color: #c4e9ef;
+        }
+
+        .connection {
+            margin-top: 15px;
+            display: inline-block;
+            padding: 9px 18px;
+            border-radius: 20px;
+            background: #7f2933;
+            font-size: 13px;
+        }
+
+        .connection.connected {
+            background: #087c61;
+        }
+
+        .section-title {
+            margin: 25px 0 15px;
+            color: #72f5e4;
+            font-size: 21px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+        }
+
+        .card {
+            background: rgba(255,255,255,0.09);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 18px;
+            padding: 25px;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+            backdrop-filter: blur(10px);
+        }
+
+        .card h3 {
+            color: #b7e9ee;
+            margin-bottom: 18px;
+            font-size: 17px;
+        }
+
+        .value {
+            font-size: 42px;
+            font-weight: bold;
+            color: #65f4df;
+        }
+
+        .unit {
+            font-size: 18px;
+            color: #c3e8e9;
+        }
+
+        .icon {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+
+        /* TRANG THAI THIET BI */
+        .status {
+            display: inline-block;
+            padding: 9px 18px;
+            border-radius: 20px;
+            background: #526575;
+            font-weight: bold;
+            margin-top: 5px;
+        }
+
+        .status.on {
+            background: #087c61;
+        }
+
+        .status.off {
+            background: #8d3540;
+        }
+
+        .status.auto {
+            background: #247ca5;
+        }
+
+        /* NUT DIEU KHIEN */
+        .control-panel {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-top: 18px;
+        }
+
+        button {
+            border: none;
+            padding: 12px 20px;
+            border-radius: 10px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            opacity: 0.85;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-on {
+            background: #079b78;
+        }
+
+        .btn-off {
+            background: #c04450;
+        }
+
+        .btn-auto {
+            background: #247ca5;
+        }
+
+        .chart-card {
+            margin-top: 20px;
+        }
+
+        .chart-box {
+            height: 280px;
+            position: relative;
+        }
+
+        .footer {
+            text-align: center;
+            color: #b7dce0;
+            padding: 30px 10px;
+            font-size: 13px;
+        }
+
+        @media(max-width: 700px) {
+            body {
+                padding: 12px;
+            }
+
+            .grid {
+                grid-template-columns: 1fr;
+            }
+
+            header h1 {
+                font-size: 23px;
+            }
+
+            .value {
+                font-size: 35px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <!-- TIEU DE -->
+    <header>
+        <h1>🐟 GIÁM SÁT BỂ NUÔI THỦY HẢI SẢN</h1>
+
+        <p>
+            Hệ thống giám sát môi trường sử dụng ESP32 và MQTT
+        </p>
+
+        <div id="mqttStatus" class="connection">
+            ● Đang kết nối MQTT...
+        </div>
+    </header>
+
+
+    <!-- THONG SO MOI TRUONG -->
+    <h2 class="section-title">
+        📊 THÔNG SỐ MÔI TRƯỜNG
+    </h2>
+
+    <div class="grid">
+
+        <div class="card">
+            <div class="icon">💧</div>
+            <h3>MỰC NƯỚC</h3>
+
+            <div>
+                <span class="value" id="mucNuoc">--</span>
+                <span class="unit">m</span>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="icon">🌡️</div>
+            <h3>NHIỆT ĐỘ NƯỚC</h3>
+
+            <div>
+                <span class="value" id="nhietDo">--</span>
+                <span class="unit">°C</span>
+            </div>
+        </div>
+
+    </div>
+
+
+    <!-- TRANG THAI VA DIEU KHIEN -->
+    <h2 class="section-title">
+        ⚙️ TRẠNG THÁI VÀ ĐIỀU KHIỂN THIẾT BỊ
+    </h2>
+
+    <div class="grid">
+
+        <!-- MAY BOM -->
+        <div class="card">
+
+            <div class="icon">🚰</div>
+            <h3>MÁY BƠM NƯỚC VÀO</h3>
+
+            <div id="bomStatus" class="status">
+                CHƯA CÓ DỮ LIỆU
+            </div>
+
+            <div class="control-panel">
+
+                <button class="btn-on"
+                    onclick="sendCommand('benuoc/bom/dieu_khien','ON')">
+                    BẬT
+                </button>
+
+                <button class="btn-off"
+                    onclick="sendCommand('benuoc/bom/dieu_khien','OFF')">
+                    TẮT
+                </button>
+
+                <button class="btn-auto"
+                    onclick="sendCommand('benuoc/bom/dieu_khien','AUTO')">
+                    AUTO
+                </button>
+
+            </div>
+
+        </div>
+
+
+        <!-- VAN XA -->
+        <div class="card">
+
+            <div class="icon">🔧</div>
+            <h3>VAN THOÁT NƯỚC</h3>
+
+            <div id="vanStatus" class="status">
+                CHƯA CÓ DỮ LIỆU
+            </div>
+
+            <div class="control-panel">
+
+                <button class="btn-on"
+                    onclick="sendCommand('benuoc/van/dieu_khien','ON')">
+                    MỞ
+                </button>
+
+                <button class="btn-off"
+                    onclick="sendCommand('benuoc/van/dieu_khien','OFF')">
+                    ĐÓNG
+                </button>
+
+                <button class="btn-auto"
+                    onclick="sendCommand('benuoc/van/dieu_khien','AUTO')">
+                    AUTO
+                </button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- BIEU DO -->
+    <h2 class="section-title">
+        📈 BIỂU ĐỒ GIÁM SÁT
+    </h2>
+
+    <div class="grid">
+
+        <div class="card chart-card">
+
+            <h3>Biểu đồ mực nước (m)</h3>
+
+            <div class="chart-box">
+                <canvas id="chartMuc"></canvas>
+            </div>
+
+        </div>
+
+        <div class="card chart-card">
+
+            <h3>Biểu đồ nhiệt độ (°C)</h3>
+
+            <div class="chart-box">
+                <canvas id="chartNhiet"></canvas>
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- FOOTER -->
+    <div class="footer">
+
+        HỆ THỐNG GIÁM SÁT BỂ NUÔI THỦY HẢI SẢN
+
+        <br>
+
+        ESP32 | FreeRTOS | MQTT | HiveMQ
+
+    </div>
+
+</div>
+
+
+<script>
+
+// ====================================
+// 1. CAU HINH MQTT
+// ====================================
+
+const broker = "wss://broker.hivemq.com:8884/mqtt";
+
+const clientId =
+    "web_benuoc_" + Math.random().toString(16).substring(2, 10);
+
+const mqttClient = mqtt.connect(broker, {
+    clientId: clientId,
+    clean: true,
+    connectTimeout: 10000,
+    reconnectPeriod: 3000
+});
+
+
+// ====================================
+// 2. KHOI TAO BIEU DO
+// ====================================
+
+function createChart(canvasId, label, color) {
+
+    return new Chart(document.getElementById(canvasId), {
+
+        type: "line",
+
+        data: {
+            labels: [],
+            datasets: [{
+                label: label,
+                data: [],
+                borderColor: color,
+                backgroundColor: color + "22",
+                fill: true,
+                tension: 0.35,
+                pointRadius: 3
+            }]
+        },
+
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+
+            plugins: {
+                legend: {
+                    labels: {
+                        color: "#ffffff"
+                    }
+                }
+            },
+
+            scales: {
+                x: {
+                    ticks: {
+                        color: "#c4e9ef"
+                    },
+                    grid: {
+                        color: "rgba(255,255,255,0.08)"
+                    }
+                },
+
+                y: {
+                    ticks: {
+                        color: "#c4e9ef"
+                    },
+                    grid: {
+                        color: "rgba(255,255,255,0.08)"
+                    }
+                }
+            }
+        }
+    });
+}
+
+
+const chartMuc = createChart(
+    "chartMuc",
+    "Mực nước",
+    "#48e5d1"
+);
+
+const chartNhiet = createChart(
+    "chartNhiet",
+    "Nhiệt độ",
+    "#ffbd59"
+);
+
+
+// ====================================
+// 3. CAP NHAT BIEU DO
+// ====================================
+
+function addData(chart, value) {
+
+    const time = new Date().toLocaleTimeString();
+
+    chart.data.labels.push(time);
+    chart.data.datasets[0].data.push(value);
+
+    if (chart.data.labels.length > 20) {
+        chart.data.labels.shift();
+        chart.data.datasets[0].data.shift();
+    }
+
+    chart.update("none");
+}
+
+
+// ====================================
+// 4. CAP NHAT TRANG THAI THIET BI
+// ====================================
+
+function updateStatus(id, value) {
+
+    const element = document.getElementById(id);
+
+    const status = value.trim().toUpperCase();
+
+    element.textContent = status;
+
+    element.classList.remove("on", "off", "auto");
+
+    if (status === "ON" || status === "OPEN" || status === "1") {
+
+        element.classList.add("on");
+
+    } else if (
+        status === "OFF" ||
+        status === "CLOSE" ||
+        status === "CLOSED" ||
+        status === "0"
+    ) {
+
+        element.classList.add("off");
+
+    } else if (status === "AUTO") {
+
+        element.classList.add("auto");
+
+    }
+}
+
+
+// ====================================
+// 5. KET NOI MQTT
+// ====================================
+
+mqttClient.on("connect", () => {
+
+    console.log("Da ket noi MQTT Broker");
+
+    const status = document.getElementById("mqttStatus");
+
+    status.textContent = "● MQTT ĐÃ KẾT NỐI";
+
+    status.classList.add("connected");
+
+    // Dang ky nhan tat ca topic cua he thong
+    mqttClient.subscribe("benuoc/#");
+
+});
+
+
+mqttClient.on("message", (topic, message) => {
+
+    const val = message.toString();
+
+    // DU LIEU MUC NUOC
+    if (topic === "benuoc/mucnuoc") {
+
+        const value = parseFloat(val);
+
+        if (Number.isFinite(value)) {
+
+            document.getElementById("mucNuoc").textContent =
+                value.toFixed(2);
+
+            addData(chartMuc, value);
+
+            console.log("Muc nuoc:", value, "m");
+        }
+    }
+
+
+    // DU LIEU NHIET DO
+    if (topic === "benuoc/nhietdo") {
+
+        const value = parseFloat(val);
+
+        if (Number.isFinite(value)) {
+
+            document.getElementById("nhietDo").textContent =
+                value.toFixed(2);
+
+            addData(chartNhiet, value);
+
+            console.log("Nhiet do:", value, "°C");
+        }
+    }
+
+
+    // TRANG THAI MAY BOM
+    if (topic === "benuoc/bom/trang_thai") {
+
+        updateStatus("bomStatus", val);
+    }
+
+
+    // TRANG THAI VAN XA
+    if (topic === "benuoc/van/trang_thai") {
+
+        updateStatus("vanStatus", val);
+    }
+
+});
+
+
+// ====================================
+// 6. GUI LENH DIEU KHIEN
+// ====================================
+
+function sendCommand(topic, command) {
+
+    if (!mqttClient.connected) {
+
+        alert("Chưa kết nối MQTT!");
+
+        return;
+    }
+
+    mqttClient.publish(topic, command, {
+        qos: 0,
+        retain: false
+    });
+
+    console.log("Da gui lenh:", topic, command);
+
+}
+
+
+// ====================================
+// 7. KIEM TRA KET NOI
+// ====================================
+
+mqttClient.on("offline", () => {
+
+    const status = document.getElementById("mqttStatus");
+
+    status.textContent = "● MẤT KẾT NỐI MQTT";
+
+    status.classList.remove("connected");
+
+});
+
+
+mqttClient.on("reconnect", () => {
+
+    const status = document.getElementById("mqttStatus");
+
+    status.textContent = "● ĐANG KẾT NỐI LẠI...";
+
+    status.classList.remove("connected");
+
+});
+
+
+mqttClient.on("error", (error) => {
+
+    console.log("Loi MQTT:", error);
+
+});
+
+</script>
+
+</body>
+</html>
